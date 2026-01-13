@@ -16,14 +16,14 @@ const TARGET_SCHEME = "UNION-OSS";
 const generateFingerprint = (record) => {
   const identityString = [
     record.TRANSACTION_EVENT_ID,
-    record.TRANSACTION_TYPE,
     record.ASIN,
+    record.TRANSACTION_TYPE,
     record.TRANSACTION_COMPLETE_DATE,
-    record.QTY || record.QUANTITY,
     record.TOTAL_ACTIVITY_VALUE_VAT_AMT,
   ]
     .join("|")
     .toLowerCase();
+
   return crypto.createHash("sha256").update(identityString).digest("hex");
 };
 
