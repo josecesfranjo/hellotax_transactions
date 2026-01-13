@@ -50,11 +50,6 @@ export async function POST(request) {
     const collector = new Writable({
       objectMode: true,
       write(record, encoding, callback) {
-        console.log(
-          "Analizando fila:",
-          record["TRANSACTION_TYPE"],
-          record["TAX_REPORTING_SCHEME"]
-        );
         // Limpieza de datos básicos
         const csvType = String(record.TRANSACTION_TYPE || "")
           .trim()
@@ -62,7 +57,14 @@ export async function POST(request) {
         const csvScheme = String(record.TAX_REPORTING_SCHEME || "")
           .trim()
           .toUpperCase();
-        const date = getRobustDate(record.TRANSACTION_COMPLETE_DATE);
+        // --- LOG 1: Ver qué fecha entra del CSV ---
+        const rawDate = record.TRANSACTION_COMPLETE_DATE;
+        const date = getRobustDate(rawDate);
+
+        // --- LOG 2: Si la fecha falla, ver por qué ---
+        if (!date && rawDate) {
+          console.error(`❌ FECHA FALLIDA: "${rawDate}" no se pudo parsear.`);
+        }
 
         // 3. Filtro de negocio: Solo guardamos lo que sea OSS y ventas/devoluciones válidas
         if (
