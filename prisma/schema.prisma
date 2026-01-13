@@ -1,0 +1,49 @@
+// prisma/schema.prisma
+
+enum TransactionType {
+  SALE
+  REFUND
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model Transaction {
+  transactionId             String              @id @default(cuid())
+  fingerprint               String              @unique
+  transactionType           TransactionType    
+  transactionDate           DateTime
+  itemDescription           String
+  itemQuantity              Int
+  departureCountry          String?
+  arrivalCountry            String?
+  taxableJurisdiction       String
+
+  // Valores económicos
+  transactionCurrencyCode   String
+  totalPriceOfItemsVatExcl  Float
+  totalShipChargeVatExcl    Float
+  totalGiftWrapVatExcl      Float
+  totalValueVatExcl         Float
+  totalPriceOfItemsVat      Float
+  totalShipChargeVat        Float
+  totalGiftWrapVat          Float
+  totalValueVat             Float
+  totalPriceOfItemsVatIncl  Float
+  totalShipChargeVatIncl    Float
+  totalGiftWrapVatIncl      Float
+  totalValueVatIncl         Float
+
+  // Fechas de gestión
+  createdAt                 DateTime           @default(now())
+  updatedAt                 DateTime           @updatedAt
+
+  // Relación con la entidad padre (User)
+  userId                    String  
+}
