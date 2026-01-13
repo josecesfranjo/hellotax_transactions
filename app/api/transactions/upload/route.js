@@ -27,6 +27,10 @@ const generateFingerprint = (record) => {
   return crypto.createHash("sha256").update(identityString).digest("hex");
 };
 
+export async function OPTIONS() {
+  return corsResponse({}, 200);
+}
+
 export async function POST(request) {
   try {
     // 1. Extraer el archivo y el ID de usuario del FormData
