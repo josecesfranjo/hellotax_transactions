@@ -1,29 +1,43 @@
-import { NextResponse } from "next/server";
+// Cliente de la base de datos
 import prisma from "@/lib/prisma";
+
+// Importaciones Next.js
+import { NextResponse } from "next/server";
+
+// Utilidades para la gestión del CORS
 import { corsHeaders, corsResponse } from "@/lib/utils";
 
-/**
- * Manejador para peticiones pre-flight (CORS).
- * Es vital para que el frontend (puerto 3000) pueda hablar con este microservicio (3001).
- */
+// Force Dynamic
+export const dynamic = "force-dynamic";
+
+// Definimos el método OPTIONS para gestionar el CORS
 export async function OPTIONS() {
   return new NextResponse(null, { status: 204, headers: corsHeaders });
 }
 
+/**
+ *  GET api/transactions/fetch
+ *
+ *  Name:         Fetch VAT Data
+ *  Description:  Devuelve un conjunto de datos calculados sobre las ventas
+ *                y los impuestos de una empresa en un periodo concreto, que
+ *                puede ser un mes o un trimestre, a partir de las transacciones
+ *                que ha realizado la empresa en ese periodo
+ **/
+
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
   const userId = searchParams.get("userId");
-
-  // 1. Obtención de parámetros de tiempo con valores por defecto
-  const year = parseInt(searchParams.get("year")) || 2024;
-  const period = searchParams.get("period") || "10";
-
   if (!userId) return corsResponse({ error: "userId requerido" }, 400);
+
+  // 1. Obtiene del params los parámetros de tiempo
+  const year = parseInt(searchParams.get("year"));
+  const period = searchParams.get("period");
 
   try {
     let startDate, endDate;
 
-    // 2. Lógica de Calendario Fiscal: Determinamos el rango exacto de la consulta
+    // 2. Determina el rango exacto de la consulta
     if (period.startsWith("Q")) {
       // Cálculo de Trimestres (Q1 = Meses 0,1,2 | Q2 = 3,4,5, etc.)
       const quarter = parseInt(period.substring(1));
@@ -36,7 +50,7 @@ export async function GET(request) {
       endDate = new Date(year, month + 1, 1);
     }
 
-    // 3. Extracción de datos de la base de datos
+    // 3. Extrae los datos de la base de datos
     const transactions = await prisma.transaction.findMany({
       where: {
         userId,
@@ -48,14 +62,10 @@ export async function GET(request) {
       },
     });
 
-    // 4. Agregación de datos (Reduce): Aquí se hace la "magia" contable
+    // 4. Agregación de datos
     const summary = transactions.reduce((acc, curr) => {
       const country = curr.taxableJurisdiction || "UNKNOWN";
-
-      // Manejo de signos: Las devoluciones restan del total del país
       const multi = curr.transactionType === "REFUND" ? -1 : 1;
-
-      // Si es el primer registro de este país, inicializamos el acumulador
       if (!acc[country]) {
         acc[country] = {
           countryCode: country,
@@ -70,9 +80,7 @@ export async function GET(request) {
           totalValueVatIncl: 0,
         };
       }
-
       const s = acc[country];
-      // Sumamos las cuotas de IVA y totales (ajustados por multi si es REFUND)
       s.totalPriceOfItemsVat += curr.totalPriceOfItemsVat * multi;
       s.totalShipChargeVat += curr.totalShipChargeVat * multi;
       s.totalGiftWrapVat += curr.totalGiftWrapVat * multi;
@@ -81,11 +89,10 @@ export async function GET(request) {
       s.totalShipChargeVatIncl += curr.totalShipChargeVatIncl * multi;
       s.totalGiftWrapVatIncl += curr.totalGiftWrapVatIncl * multi;
       s.totalValueVatIncl += curr.totalValueVatIncl * multi;
-
       return acc;
     }, {});
 
-    // 5. Formateo y redondeo final (Para evitar errores de coma flotante de JS)
+    // 5. Formateo y redondeo final
     const finalSummaries = Object.values(summary).map((values) => ({
       countryCode: values.countryCode,
       currencyCode: values.currencyCode,
@@ -101,13 +108,15 @@ export async function GET(request) {
       totalValueVatIncl: Math.round(values.totalValueVatIncl * 100) / 100,
     }));
 
-    // 6. Respuesta final enriquecida
+    // 6. Respuesta con el resultado
     return corsResponse({
       period: period,
       year: year,
       range: { start: startDate, end: endDate },
       summaries: finalSummaries,
     });
+
+    // 7. Respuesta del error en el cálculo
   } catch (error) {
     console.error("Error en microservicio de cálculo:", error);
     return corsResponse({ error: error.message }, 500);

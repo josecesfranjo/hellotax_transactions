@@ -1,21 +1,34 @@
-export const dynamic = "force-dynamic";
+// Cliente de la base de datos
+import prisma from "@/lib/prisma";
+
+// Importaciones Next.js
 import { NextResponse } from "next/server";
-import { PrismaClient } from "@prisma/client";
+
+// Utilidades para la gestión del CORS
+import { corsHeaders, corsResponse } from "@/lib/utils";
+
+// Constante con los países de UE y sus códigos
 import { EU_COUNTRIES } from "@/lib/EuCountries";
-import { corsHeaders } from "@/lib/utils";
 
-const prisma = new PrismaClient();
+// Force Dynamic
+export const dynamic = "force-dynamic";
 
-/**
- * OPTIONS: Maneja la petición "pre-flight" del navegador.
- * Sin esto, el navegador bloquea el GET por seguridad.
- */
+// Definimos el método OPTIONS para gestionar el CORS
 export async function OPTIONS() {
   return new NextResponse(null, {
     status: 204,
     headers: corsHeaders,
   });
 }
+
+/**
+ *  GET api/transactions/fetchByCountry
+ *
+ *  Name:         Fetch Transactions By Country
+ *  Description:  Devuelve las transacciones existentes en la base de datos para
+ *                una empresa, un periodo de tiempo concreto, que puede ser
+ *                un mes o un trimestre, y un país concreto
+ **/
 
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
@@ -24,7 +37,7 @@ export async function GET(request) {
   const yearStr = searchParams.get("year");
   const periodRaw = searchParams.get("period");
 
-  // Validación de parámetros
+  // 1. Validación de parámetros
   if (
     !country ||
     !userId ||
@@ -32,16 +45,13 @@ export async function GET(request) {
     !periodRaw ||
     periodRaw === "undefined"
   ) {
-    return NextResponse.json(
-      { error: "Invalid parameters." },
-      { status: 400, headers: corsHeaders } // Importante incluir headers incluso en errores
-    );
+    return corsResponse({ error: "Invalid parameters." }, 400);
   }
 
   const year = parseInt(yearStr);
 
   try {
-    // 1. NORMALIZACIÓN DE FECHAS
+    // 2. Normalización de fechas
     let startDate, endDate;
     if (periodRaw.startsWith("Q")) {
       const quarter = parseInt(periodRaw.substring(1));
@@ -53,23 +63,20 @@ export async function GET(request) {
       endDate = new Date(Date.UTC(year, month + 1, 1));
     }
 
-    // 2. GENERACIÓN DE VARIACIONES DE PAÍS
+    // 3. Generación de variables de país
     const countryInfo = EU_COUNTRIES[country];
     const variationsSet = new Set([country, country.toLowerCase()]);
-
     if (countryInfo) {
       variationsSet.add(countryInfo.name);
       variationsSet.add(countryInfo.name.toUpperCase());
       variationsSet.add(countryInfo.name.toLowerCase());
     }
-
     const countryVariations = Array.from(variationsSet);
 
-    // 3. CONSULTA A PRISMA
+    // 4. Extracción de datos de la base de datos
     const transactions = await prisma.transaction.findMany({
       where: {
         userId: userId,
-        // Usamos taxableJurisdiction o arrivalCountry según tu mapeo del CSV
         OR: [
           { taxableJurisdiction: { in: countryVariations } },
           { arrivalCountry: { in: countryVariations } },
@@ -94,24 +101,17 @@ export async function GET(request) {
       orderBy: { transactionDate: "desc" },
     });
 
-    // 4. RESPUESTA CON HEADERS CORS
-    return NextResponse.json(
-      {
-        country,
-        countryName: countryInfo?.name || country,
-        count: transactions.length,
-        transactions,
-      },
-      {
-        status: 200,
-        headers: corsHeaders,
-      }
-    );
+    // 6. Respuesta con el resultado
+    return corsResponse({
+      country,
+      countryName: countryInfo?.name || country,
+      count: transactions.length,
+      transactions,
+    });
+
+    // 7. Error en el cálculo
   } catch (error) {
-    console.error("❌ Error:", error.message);
-    return NextResponse.json(
-      { error: error.message },
-      { status: 500, headers: corsHeaders }
-    );
+    console.error("❌ Error en Microservicio Detalle:", error.message);
+    return corsResponse({ error: error.message }, 500);
   }
 }
