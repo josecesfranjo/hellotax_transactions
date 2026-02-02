@@ -1,6 +1,10 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   async headers() {
+    // Usamos el valor de la variable de entorno o el de producción por defecto
+    const origin =
+      process.env.ALLOWED_ORIGIN || "https://hellotax-app.vercel.app";
+
     return [
       {
         source: "/api/:path*",
@@ -8,7 +12,7 @@ const nextConfig = {
           { key: "Access-Control-Allow-Credentials", value: "true" },
           {
             key: "Access-Control-Allow-Origin",
-            value: "https://hellotax-app.vercel.app",
+            value: origin,
           },
           {
             key: "Access-Control-Allow-Methods",

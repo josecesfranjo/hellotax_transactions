@@ -29,7 +29,6 @@ export async function OPTIONS() {
  *                una empresa, un periodo de tiempo concreto, que puede ser
  *                un mes o un trimestre, y un país concreto
  **/
-
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
   const country = searchParams.get("country")?.toUpperCase();
@@ -37,7 +36,7 @@ export async function GET(request) {
   const yearStr = searchParams.get("year");
   const periodRaw = searchParams.get("period");
 
-  // 1. Validación de parámetros
+  // Validación de parámetros
   if (
     !country ||
     !userId ||
@@ -51,7 +50,7 @@ export async function GET(request) {
   const year = parseInt(yearStr);
 
   try {
-    // 2. Normalización de fechas
+    // Normalización de fechas
     let startDate, endDate;
     if (periodRaw.startsWith("Q")) {
       const quarter = parseInt(periodRaw.substring(1));
@@ -63,7 +62,7 @@ export async function GET(request) {
       endDate = new Date(Date.UTC(year, month + 1, 1));
     }
 
-    // 3. Generación de variables de país
+    // Generación de variables de país
     const countryInfo = EU_COUNTRIES[country];
     const variationsSet = new Set([country, country.toLowerCase()]);
     if (countryInfo) {
@@ -73,7 +72,7 @@ export async function GET(request) {
     }
     const countryVariations = Array.from(variationsSet);
 
-    // 4. Extracción de datos de la base de datos
+    // Extracción de datos de la base de datos
     const transactions = await prisma.transaction.findMany({
       where: {
         userId: userId,
@@ -101,7 +100,7 @@ export async function GET(request) {
       orderBy: { transactionDate: "desc" },
     });
 
-    // 6. Respuesta con el resultado
+    // Respuesta con el resultado
     return corsResponse({
       country,
       countryName: countryInfo?.name || country,
@@ -109,7 +108,7 @@ export async function GET(request) {
       transactions,
     });
 
-    // 7. Error en el cálculo
+    // Error en el cálculo
   } catch (error) {
     console.error("❌ Error en Microservicio Detalle:", error.message);
     return corsResponse({ error: error.message }, 500);

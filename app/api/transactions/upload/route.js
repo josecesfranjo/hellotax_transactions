@@ -29,15 +29,38 @@ const cleanAndParseFloat = (value) => {
 // Crea la fecha en formato ISO (YYYY-MM-DD) para que la pueda manejar JS
 const getRobustDate = (dateStr) => {
   if (!dateStr) return null;
-  if (dateStr.includes("-")) {
-    const parts = dateStr.split(" ")[0].split("-");
+  const s = String(dateStr).trim();
+
+  // Caso Marzo: "19-03-2025" (DD-MM-YYYY)
+  if (s.includes("-")) {
+    const parts = s.split("-");
     if (parts.length === 3) {
-      const [day, month, year] = parts;
-      const d = new Date(`${year}-${month}-${day}`);
-      return isNaN(d.getTime()) ? null : d;
+      // Si el primer bloque es el día (2 dígitos o menos) y el último el año (4 dígitos)
+      if (parts[0].length <= 2 && parts[2].length === 4) {
+        return new Date(
+          parseInt(parts[2]),
+          parseInt(parts[1]) - 1,
+          parseInt(parts[0]),
+        );
+      }
+      // Si ya viene como YYYY-MM-DD
+      return new Date(s);
     }
   }
-  const d = new Date(dateStr);
+
+  // Caso Julio: "19/03/2025" (DD/MM/YYYY)
+  if (s.includes("/")) {
+    const parts = s.split("/");
+    if (parts.length === 3) {
+      return new Date(
+        parseInt(parts[2]),
+        parseInt(parts[1]) - 1,
+        parseInt(parts[0]),
+      );
+    }
+  }
+
+  const d = new Date(s);
   return isNaN(d.getTime()) ? null : d;
 };
 
@@ -56,13 +79,12 @@ const generateFingerprint = (record) => {
 };
 
 // Definimos el método OPTIONS para gestionar el CORS
-export async function OPTIONS() {
+export async function OPTIONS(request) {
   return new NextResponse(null, {
     status: 204,
-    headers: corsHeaders,
+    headers: corsHeaders(request),
   });
 }
-
 /**
  *  POST api/transactions/upload
  *
@@ -80,8 +102,11 @@ export async function POST(request) {
     const formData = await request.formData();
     const file = formData.get("csvFile");
     const userId = formData.get("userId");
+    const userFrequency = formData.get("taxFrequency") || "MONTHLY";
+
     if (!file || !userId)
       return corsResponse({ message: "Datos incompletos" }, 400);
+
     const transactions = [];
 
     // 2. Convierte el stream del navegador a un stream compatible con Node.js
@@ -97,84 +122,82 @@ export async function POST(request) {
         const csvScheme = String(record.TAX_REPORTING_SCHEME || "")
           .trim()
           .toUpperCase();
-        const rawDate = record.TRANSACTION_COMPLETE_DATE;
+
+        // Usamos la fecha de completado o la de cálculo como backup
+        const rawDate =
+          record.TRANSACTION_COMPLETE_DATE || record.TAX_CALCULATION_DATE;
         const date = getRobustDate(rawDate);
+
         if (!date && rawDate) {
           console.error(`❌ FECHA FALLIDA: "${rawDate}" no se pudo parsear.`);
         }
-        // Lógica de filtrado: UNION-OSS y ventas o devoluciones
-        if (
-          date &&
-          ALLOWED_TYPES.includes(csvType) &&
-          csvScheme === TARGET_SCHEME
-        ) {
+
+        // Lógica de filtrado
+        const isAllowedType = ALLOWED_TYPES.includes(csvType);
+        const isTargetScheme = csvScheme === TARGET_SCHEME;
+
+        if (date && isAllowedType && isTargetScheme) {
           transactions.push({
-            // Utiliza el Fingerprint para evitar duplicados
             fingerprint: generateFingerprint(record),
             userId: userId,
             transactionType: csvType,
             transactionDate: date,
             itemDescription: record.ITEM_DESCRIPTION || "",
-            itemQuantity: parseInt(record.QTY || record.QUANTITY || "0"),
-            totalPriceOfItemsVatExcl:
-              cleanAndParseFloat(
-                record.TOTAL_PRICE_OF_ITEMS_AMT_VAT_EXCL ||
-                  record.PRICE_OF_ITEMS_AMT_VAT_EXCL,
-              ) || 0,
-            totalShipChargeVatExcl:
-              cleanAndParseFloat(
-                record.TOTAL_SHIP_CHARGE_AMT_VAT_EXCL ||
-                  record.SHIP_CHARGE_AMT_VAT_EXCL,
-              ) || 0,
-            totalGiftWrapVatExcl:
-              cleanAndParseFloat(
-                record.TOTAL_GIFT_WRAP_AMT_VAT_EXCL ||
-                  record.GIFT_WRAP_AMT_VAT_EXCL,
-              ) || 0,
-            totalValueVatExcl:
-              cleanAndParseFloat(record.TOTAL_ACTIVITY_VALUE_AMT_VAT_EXCL) || 0,
-            totalPriceOfItemsVat:
-              cleanAndParseFloat(
-                record.TOTAL_PRICE_OF_ITEMS_VAT_AMT ||
-                  record.PRICE_OF_ITEMS_VAT_AMT,
-              ) || 0,
-            totalShipChargeVat:
-              cleanAndParseFloat(
-                record.TOTAL_SHIP_CHARGE_VAT_AMT || record.SHIP_CHARGE_VAT_AMT,
-              ) || 0,
-            totalGiftWrapVat:
-              cleanAndParseFloat(
-                record.TOTAL_GIFT_WRAP_VAT_AMT || record.GIFT_WRAP_VAT_AMT,
-              ) || 0,
-            totalValueVat:
-              cleanAndParseFloat(record.TOTAL_ACTIVITY_VALUE_VAT_AMT) || 0,
-            totalPriceOfItemsVatIncl:
-              cleanAndParseFloat(
-                record.TOTAL_PRICE_OF_ITEMS_AMT_VAT_INCL ||
-                  record.PRICE_OF_ITEMS_AMT_VAT_INCL,
-              ) || 0,
-            totalShipChargeVatIncl:
-              cleanAndParseFloat(
-                record.TOTAL_SHIP_CHARGE_AMT_VAT_INCL ||
-                  record.SHIP_CHARGE_AMT_VAT_INCL,
-              ) || 0,
-            totalGiftWrapVatIncl:
-              cleanAndParseFloat(
-                record.TOTAL_GIFT_WRAP_AMT_VAT_INCL ||
-                  record.GIFT_WRAP_AMT_VAT_INCL,
-              ) || 0,
-            totalValueVatIncl:
-              cleanAndParseFloat(record.TOTAL_ACTIVITY_VALUE_AMT_VAT_INCL) || 0,
+            itemQuantity: parseInt(record.QTY || "0"),
             transactionCurrencyCode: record.TRANSACTION_CURRENCY_CODE || "EUR",
             departureCountry:
-              record.DEPARTURE_COUNTRY || record.SALE_DEPART_COUNTRY || "",
+              record.SALE_DEPART_COUNTRY || record.DEPARTURE_COUNTRY || "",
             arrivalCountry:
-              record.ARRIVAL_COUNTRY || record.SALE_ARRIVAL_COUNTRY || "",
+              record.SALE_ARRIVAL_COUNTRY || record.ARRIVAL_COUNTRY || "",
             taxableJurisdiction: record.TAXABLE_JURISDICTION || "",
+            totalPriceOfItemsVatExcl: cleanAndParseFloat(
+              record.TOTAL_PRICE_OF_ITEMS_AMT_VAT_EXCL ||
+                record.PRICE_OF_ITEMS_AMT_VAT_EXCL,
+            ),
+            totalShipChargeVatExcl: cleanAndParseFloat(
+              record.TOTAL_SHIP_CHARGE_AMT_VAT_EXCL ||
+                record.SHIP_CHARGE_AMT_VAT_EXCL,
+            ),
+            totalGiftWrapVatExcl: cleanAndParseFloat(
+              record.TOTAL_GIFT_WRAP_AMT_VAT_EXCL ||
+                record.GIFT_WRAP_AMT_VAT_EXCL,
+            ),
+            totalValueVatExcl: cleanAndParseFloat(
+              record.TOTAL_ACTIVITY_VALUE_AMT_VAT_EXCL,
+            ),
+            totalPriceOfItemsVat: cleanAndParseFloat(
+              record.TOTAL_PRICE_OF_ITEMS_VAT_AMT ||
+                record.PRICE_OF_ITEMS_VAT_AMT,
+            ),
+            totalShipChargeVat: cleanAndParseFloat(
+              record.TOTAL_SHIP_CHARGE_VAT_AMT || record.SHIP_CHARGE_VAT_AMT,
+            ),
+            totalGiftWrapVat: cleanAndParseFloat(
+              record.TOTAL_GIFT_WRAP_VAT_AMT || record.GIFT_WRAP_VAT_AMT,
+            ),
+            totalValueVat: cleanAndParseFloat(
+              record.TOTAL_ACTIVITY_VALUE_VAT_AMT,
+            ),
+            totalPriceOfItemsVatIncl: cleanAndParseFloat(
+              record.TOTAL_PRICE_OF_ITEMS_AMT_VAT_INCL ||
+                record.PRICE_OF_ITEMS_AMT_VAT_INCL,
+            ),
+            totalShipChargeVatIncl: cleanAndParseFloat(
+              record.TOTAL_SHIP_CHARGE_AMT_VAT_INCL ||
+                record.SHIP_CHARGE_AMT_VAT_INCL,
+            ),
+            totalGiftWrapVatIncl: cleanAndParseFloat(
+              record.TOTAL_GIFT_WRAP_AMT_VAT_INCL ||
+                record.GIFT_WRAP_AMT_VAT_INCL,
+            ),
+            totalValueVatIncl: cleanAndParseFloat(
+              record.TOTAL_ACTIVITY_VALUE_AMT_VAT_INCL,
+            ),
           });
         } else {
+          // Esto te dirá exactamente qué campo está fallando en las filas que no entran
           console.log(
-            `Fila descartada: Fecha(${!!date}) Tipo(${csvType}) Esquema(${csvScheme})`,
+            `⏩ Omitida: ${record.TRANSACTION_EVENT_ID} | Fecha OK: ${!!date} | Tipo OK: ${isAllowedType} | Esquema: ${csvScheme}`,
           );
         }
         callback();
@@ -209,11 +232,20 @@ export async function POST(request) {
       skipDuplicates: true,
     });
 
-    //7. Respuesta con éxito
-    return corsResponse({
-      message: "Éxito",
-      nuevosInsertados: result.count,
-    });
+    console.log("Resultado Prisma:", result); // <-- AÑADE ESTO PARA VER EL LOG EN TU TERMINAL
+
+    // 7. Respuesta detallada para saber qué pasa
+    return corsResponse(
+      {
+        message: "Proceso completado",
+        detalles: {
+          frecuenciaProcesada: userFrequency,
+          insertados: result.count,
+        },
+      },
+      200,
+      request,
+    );
 
     //8. Error en el procesado del fichero
   } catch (error) {

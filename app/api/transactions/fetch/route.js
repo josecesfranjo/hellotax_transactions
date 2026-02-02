@@ -30,14 +30,14 @@ export async function GET(request) {
   const userId = searchParams.get("userId");
   if (!userId) return corsResponse({ error: "userId requerido" }, 400);
 
-  // 1. Obtiene del params los parámetros de tiempo
+  // Obtiene del params los parámetros de tiempo
   const year = parseInt(searchParams.get("year"));
   const period = searchParams.get("period");
 
   try {
     let startDate, endDate;
 
-    // 2. Determina el rango exacto de la consulta
+    // Determina el rango exacto de la consulta
     if (period.startsWith("Q")) {
       // Cálculo de Trimestres (Q1 = Meses 0,1,2 | Q2 = 3,4,5, etc.)
       const quarter = parseInt(period.substring(1));
@@ -50,7 +50,7 @@ export async function GET(request) {
       endDate = new Date(year, month + 1, 1);
     }
 
-    // 3. Extrae los datos de la base de datos
+    // Extrae los datos de la base de datos
     const transactions = await prisma.transaction.findMany({
       where: {
         userId,
@@ -62,7 +62,7 @@ export async function GET(request) {
       },
     });
 
-    // 4. Agregación de datos
+    // Agregación de datos
     const summary = transactions.reduce((acc, curr) => {
       const country = curr.taxableJurisdiction || "UNKNOWN";
       const multi = curr.transactionType === "REFUND" ? -1 : 1;
@@ -92,7 +92,7 @@ export async function GET(request) {
       return acc;
     }, {});
 
-    // 5. Formateo y redondeo final
+    // Formateo y redondeo final
     const finalSummaries = Object.values(summary).map((values) => ({
       countryCode: values.countryCode,
       currencyCode: values.currencyCode,
@@ -108,7 +108,7 @@ export async function GET(request) {
       totalValueVatIncl: Math.round(values.totalValueVatIncl * 100) / 100,
     }));
 
-    // 6. Respuesta con el resultado
+    // Respuesta con el resultado
     return corsResponse({
       period: period,
       year: year,
@@ -116,7 +116,7 @@ export async function GET(request) {
       summaries: finalSummaries,
     });
 
-    // 7. Respuesta del error en el cálculo
+    // Respuesta del error en el cálculo
   } catch (error) {
     console.error("Error en microservicio de cálculo:", error);
     return corsResponse({ error: error.message }, 500);
